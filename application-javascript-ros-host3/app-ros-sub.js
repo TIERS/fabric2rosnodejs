@@ -24,9 +24,9 @@ const chaincodeName = 'simplecc';
 
 // Peer settings
 const { buildCAClient, registerAndEnrollUser, enrollAdmin } = require('../javascript/CAUtil.js');
-const { buildCCPOrg1, buildWallet } = require('../javascript/AppUtil.js');
-const org1 = 'Org1MSP';
-const Org1UserId = 'User1';
+const { buildCCPOrg2, buildWallet } = require('../javascript/AppUtil.js');
+const org2 = 'Org2MSP';
+const Org2UserId = 'User3';
 
 // Text formatting
 const RED = '\x1b[31m\n';
@@ -43,51 +43,51 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function initGatewayForOrg1(useCommitEvents) {
-  console.log(`${GREEN}--> Fabric client user & Gateway init: Using Org1 identity to Org1 Peer${RESET}`);
+async function initGatewayForOrg2(useCommitEvents) {
+  console.log(`${GREEN}--> Fabric client user & Gateway init: Using Org2 identity to Org2 Peer${RESET}`);
   // build an in memory object with the network configuration (also known as a connection profile)
-  const ccpOrg1 = buildCCPOrg1();
+  const ccpOrg2 = buildCCPOrg2();
 
   // build an instance of the fabric ca services client based on
   // the information in the network configuration
-  const caOrg1Client = buildCAClient(FabricCAServices, ccpOrg1, 'ca.org1.example.com');
+  const caOrg2Client = buildCAClient(FabricCAServices, ccpOrg2, 'ca.org2.example.com');
 
   // setup the wallet to cache the credentials of the application user, on the app server locally
-  const walletPathOrg1 = path.join(__dirname, 'wallet', 'org1');
-  const walletOrg1 = await buildWallet(Wallets, walletPathOrg1);
+  const walletPathOrg2 = path.join(__dirname, 'wallet', 'org2');
+  const walletOrg2 = await buildWallet(Wallets, walletPathOrg2);
 
   // in a real application this would be done on an administrative flow, and only once
   // stores admin identity in local wallet, if needed
-  await enrollAdmin(caOrg1Client, walletOrg1, org1);
+  await enrollAdmin(caOrg2Client, walletOrg2, org2);
   // register & enroll application user with CA, which is used as client identify to make chaincode calls
   // and stores app user identity in local wallet
   // In a real application this would be done only when a new user was required to be added
   // and would be part of an administrative flow
-  await registerAndEnrollUser(caOrg1Client, walletOrg1, org1, Org1UserId, 'org1.department1');
+  await registerAndEnrollUser(caOrg2Client, walletOrg2, org2, Org2UserId, 'org2.department1');
 
   try {
     // Create a new gateway for connecting to Org's peer node.
-    const gatewayOrg1 = new Gateway();
+    const gatewayOrg2 = new Gateway();
 
     if (useCommitEvents) {
-      await gatewayOrg1.connect(ccpOrg1, {
-        wallet: walletOrg1,
-        identity: Org1UserId,
+      await gatewayOrg2.connect(ccpOrg2, {
+        wallet: walletOrg2,
+        identity: Org2UserId,
         discovery: { enabled: true, asLocalhost: false }
       });
     } else {
-      await gatewayOrg1.connect(ccpOrg1, {
-        wallet: walletOrg1,
-        identity: Org1UserId,
+      await gatewayOrg2.connect(ccpOrg2, {
+        wallet: walletOrg2,
+        identity: Org2UserId,
         discovery: { enabled: true, asLocalhost: false },
         eventHandlerOptions: EventStrategies.NONE
       });
     }
 
 
-    return gatewayOrg1;
+    return gatewayOrg2;
   } catch (error) {
-    console.error(`Error in connecting to gateway for Org1: ${error}`);
+    console.error(`Error in connecting to gateway for Org2: ${error}`);
     process.exit(1);
   }
 }
@@ -100,15 +100,15 @@ async function main() {
 
   console.log(`${BLUE} **** START ****${RESET}`);
 
-  let contract1Org1;
+  let contract1Org2;
 
   try {
     // Fabric gateway setup
-    const gateway1Org1 = await initGatewayForOrg1(true);
+    const gateway1Org2 = await initGatewayForOrg2(true);
     // Connect to Fabric network channel
-    const network1Org1 = await gateway1Org1.getNetwork(channelName);
+    const network1Org2 = await gateway1Org2.getNetwork(channelName);
     // Connect to chaincode
-    contract1Org1 = network1Org1.getContract(chaincodeName);
+    contract1Org2 = network1Org2.getContract(chaincodeName);
   } catch {
     console.error(`Error in setup: ${error}`);
     if (error.stack) {
@@ -124,20 +124,40 @@ async function main() {
     printGreen(`Creating new ROS 2 node`);
     const node = new rclnodejs.Node('ros_subscriber_fabric_asset_creator');
 
-    printGreen(`Subscribing to /odom ...`);
+    printGreen(`Subscribing to /ori_odom /cmd_vel ...`);
 
-    const msg_type = 'geometry_msgs/msg/PoseStamped'
-    const topic = "/odom"
-    node.createSubscription(msg_type, topic, (msg) => {
+    const msg_type1 = 'nav_msgs/msg/Odometry'
+    const topic1 = "/ori_odom"
+    node.createSubscription(msg_type1, topic1, (msg) => {
       // var msg_string = JSON.stringify(msg)
       // console.log(`${GREEN} --> Received ROS message: ${msg_string}${RESET}`);
 
       try {
         // Create new asset
-        console.log(`${GREEN} --> Submitting Fabric transaction: set${RESET}`);
-        transaction = contract1Org1.createTransaction('set');
+        console.log(`${GREEN} --> Submitting Fabric transaction: ${topic1}${RESET}`);
+        transaction = contract1Org2.createTransaction('set');
 
-        transaction.submit('/odom', `{"topic": "${topic}", "msg_type": "${msg_type}", "msg": ${JSON.stringify(msg)}}`);
+        transaction.submit('/ori_odom', `{"topic": "${topic1}", "msg_type": "${msg_type1}", "msg": ${JSON.stringify(msg)}}`);
+        console.log(`{"topic": "${topic1}", "msg_type": "${msg_type1}", "msg": ${JSON.stringify(msg)}}`);
+        console.log(`${GREENNL} <-- Submit CreateAsset Result: committed${RESET}`);
+      } catch (createError) {
+        console.log(`${RED} <-- Submit Failed: CreateAsset - ${createError}${RESET}`);
+      }
+    });
+
+    const msg_type2 = 'geometry_msgs/msg/Twist'
+    const topic2 = "/cmd_vel"
+    node.createSubscription(msg_type2, topic2, (msg) => {
+      // var msg_string = JSON.stringify(msg)
+      // console.log(`${GREEN} --> Received ROS message: ${msg_string}${RESET}`);
+
+      try {
+        // Create new asset
+        console.log(`${GREEN} --> Submitting Fabric transaction: ${topic2}${RESET}`);
+        transaction = contract1Org2.createTransaction('set');
+
+        transaction.submit('/cmd_vel', `{"topic": "${topic2}", "msg_type": "${msg_type2}", "msg": ${JSON.stringify(msg)}}`);
+        console.log(`{"topic": "${topic2}", "msg_type": "${msg_type2}", "msg": ${JSON.stringify(msg)}}`);
         console.log(`${GREENNL} <-- Submit CreateAsset Result: committed${RESET}`);
       } catch (createError) {
         console.log(`${RED} <-- Submit Failed: CreateAsset - ${createError}${RESET}`);
@@ -149,7 +169,7 @@ async function main() {
 
   });
 
-  await sleep(60000);
+  await sleep(50000);
   console.log(`${BLUE} **** END ****${RESET}`);
   process.exit(0);
 }

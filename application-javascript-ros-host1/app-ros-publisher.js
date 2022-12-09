@@ -36,7 +36,7 @@ const BLUE = '\x1b[34m';
 const RESET = '\x1b[0m';
 
 // ROS Settings
-const topics_to_publish = ["/odom"];
+const topics_to_publish = ["/ori_odom","/cmd_vel"];
 
 /**
  * Perform a sleep -- asynchronous wait
@@ -144,7 +144,7 @@ async function main() {
         if (asset.EventName == "set") {
 
           // Get payload data
-          // console.log(asset.EventContent);
+          console.log(asset.EventContent);
           var event_content = JSON.parse(JSON.stringify(asset.EventContent));
           
           // Publish data to ROS
@@ -163,21 +163,84 @@ async function main() {
               console.log(`${RED} --> Topic ${ros_data.topic} being ignored...`);
             } else {
               if ( !(ros_data.topic  in publishers) ) {
-                console.log(`${GREEN}Creating new publisher for topic ${ros_data.topic} and type  ${ros_data.msg_type}.${RESET}`);
+                console.log(`${GREEN} --> Creating new publisher for topic ${ros_data.topic} and type  ${ros_data.msg_type}.${RESET}`);
                 publishers[ros_data.topic] = node.createPublisher(ros_data.msg_type, ros_data.topic);
+                publisher = publishers[ros_data.topic];
               } else {
                 publisher = publishers[ros_data.topic];
               }
               // console.log(ros_data.msg);
               printGreen("Publishing data to ROS...")
-              try {
-                console.log(++counter);
-                publisher.publish(ros_data.msg);
-              } catch {
-                console.log(`${RED}<-- Failed publishing msg to ROS - ${e}${RESET}`);
+              if (ros_data.msg_type == "nav_msgs/msg/Odometry") {
+                console.log(`${BLUE}  --> Got Odometry data. Deleting covariance matrix...`);
+                try {
+                  delete ros_data.msg.pose.covariance;
+                  delete ros_data.msg.twist.covariance; 
+                  // delete ros_data.msg.pose.covariance;
+                } catch(e) {
+                  console.log(`${RED}<-- Failed cleaning Odometry msg..... - ${e}${RESET}`);
+                }
+                try {
+                  console.log(++counter);
+                  // var new_msg = {
+                  //   header: {
+                  //   stamp: {
+                  //       sec: 123,
+                  //       nanosec: 100,
+                  //   },
+                  //   frame_id: "world"
+                  //   },
+                  //   child_frame_id: "base_footprint",
+                  //   pose: {
+                  //     pose: {
+                  //         position: {
+                  //             x: 0.5,
+                  //             y: 0.0,
+                  //             z: 0.0
+                  //         },
+                  //         orientation: {
+                  //             x: 0.0,
+                  //             y: 0.0,
+                  //             z: 0.0,
+                  //             w: 1.0
+                  //         }
+                  //     }
+                  //   },
+                    
+                  //   twist: {
+                  //     twist: {
+                  //         linear: {
+                  //             x: 1.0,
+                  //             y: 1.0,
+                  //             z: 0.0
+                  //         },
+                  //         angular: {
+                  //             x: 0.0,
+                  //             y: 0.0,
+                  //             z: 0.0,
+                  //         }
+                  //     }
+                  //   }
+                  // };
+                  var new_msg = ros_data.msg;
+                  // console.log(new_msg);
+                  // console.log(new_msg.pose.pose.position);
+                  // console.log(publisher);
+                  publisher.publish(new_msg);
+                } catch(e) {
+                  console.log(`${RED}<-- Failed publishing Odometry msg to ROS - ${e}${RESET}`);
+                }
+              } else {
+                try {
+                  console.log(++counter);
+                  // console.log(ros_data.msg)
+                  publisher.publish(ros_data.msg);
+                } catch(e) {
+                  console.log(`${RED}<-- Failed publishing msg to ROS - ${e}${RESET}`);
+                }
               }
             }
-          } catch {
+          } catch(e) {
             console.log(`${RED}<-- Failed getting ROS publisher - ${e}${RESET}`);
           }
 
@@ -198,7 +261,7 @@ async function main() {
 
   });
 
-  await sleep(60000);
+  await sleep(50000);
   console.log(`${BLUE} **** END ****${RESET}`);
   process.exit(0);
 }
